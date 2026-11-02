@@ -50,15 +50,17 @@ button.dl{border:0;background:none;color:var(--danger);margin-right:auto}
 .dlg{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;max-width:420px;width:100%;max-height:90vh;overflow:auto}
 .dlg h2{margin-bottom:10px}.dlg label{margin-top:10px}.pre{white-space:pre-line;margin:0 0 6px}.btns{margin-top:14px}
 .ct{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:14px;margin-top:8px}.ct th,.ct td{padding:7px 3px;border-bottom:1px solid var(--line);text-align:right;font-weight:400}.ct th{color:var(--mute);font-size:13px}.ct th:first-child,.ct td:first-child{text-align:left}.ct tr.me td{background:var(--bg);font-weight:700}
+.cmp{border-radius:10px;padding:10px 12px;margin:-4px 0 12px;font-size:14px;background:var(--bg);color:var(--mute);border:1px solid var(--line)}.cmp:empty{display:none}.cmp b{color:var(--ink)}.cmp b.no{color:var(--plate)}.cmp .ok b{color:var(--acc)}
 .ghost{position:fixed;z-index:60;pointer-events:none;transform:translate(-50%,-130%);background:var(--acc);color:var(--acc-ink);padding:6px 14px;border-radius:16px;font-weight:700}
 </style>
 </head>
 <body>
 <main>
+<button class="cmp" id="bakTop" type="button" hidden style="width:100%;text-align:left;margin:0 0 12px">⚠ 超過 7 天沒備份了，點這裡前往備份</button>
 <div class="tabs" id="tabs"></div>
 
 <section>
-  <div class="sh"><h2>運動項目</h2><button class="link" id="orgBtn" type="button">拖移整理</button></div>
+  <div class="sh"><h2>運動項目</h2><span><button class="link" id="catBtn" type="button">管理分類</button><button class="link" id="orgBtn" type="button">拖移整理</button></span></div>
   <div id="chips"></div>
   <button id="addBtn" type="button" style="width:100%;margin-top:8px">＋ 新增項目</button>
 </section>
@@ -69,6 +71,7 @@ button.dl{border:0;background:none;color:var(--danger);margin-right:auto}
   <div class="seg" id="unitSeg"><button type="button" data-u="kg">公斤 kg</button><button type="button" data-u="lb">磅 lb</button></div>
   <div class="steps" id="steps"></div>
   <div class="vol"><span>總容量（已換算公斤）</span><b id="preview">0 kg</b></div>
+  <div class="cmp" id="cmp"></div>
   <button class="link" id="calcBtn" type="button" style="margin:-6px 0 6px -8px">換重量，總容量要做幾下？</button>
   <label for="note">當下狀況備註（選填）</label>
   <input id="note" type="text" placeholder="例如：右肩有點緊">
@@ -78,8 +81,16 @@ button.dl{border:0;background:none;color:var(--danger);margin-right:auto}
 </section>
 
 <section>
-  <div class="sh"><h2>歷史紀錄</h2><div class="seg" id="hSeg"><button type="button" data-o="0" class="on">全部</button><button type="button" data-o="1">只看此項目</button></div></div>
+  <div class="sh"><h2>歷史紀錄</h2><div class="seg" id="mSeg"><button type="button" data-m="kg">總公斤</button><button type="button" data-m="sets">總組數</button></div></div>
+  <div class="seg" id="hSeg" style="margin-bottom:6px"><button type="button" data-o="0" class="on">全部</button><button type="button" data-o="1">只看此項目</button></div>
   <div id="hist"></div>
+</section>
+
+<section id="bakSec">
+  <div class="sh"><h2>資料備份</h2></div>
+  <p class="last" id="bakInfo"></p>
+  <div class="row"><button id="exp" type="button">匯出備份</button><button id="imp" type="button">匯入備份</button></div>
+  <input id="impf" type="file" accept="application/json,.json" hidden>
 </section>
 </main>
 
@@ -89,6 +100,8 @@ const KEY="workout-log-v1",LB=0.45359237;
 let S={exercises:[],logs:[],last:"",day:""},U="kg",org=false,only=false;const open={};
 try{const r=localStorage.getItem(KEY);if(r){const p=JSON.parse(r);if(p&&p.exercises&&p.logs)S=p;}}catch(e){}
 if(!S.day)S.day=S.exercises.length?"other":"chest";
+function DEFP(){return [["shoulder","肩"],["chest","胸"],["tri","三頭"],["other","其他"]];}
+if(!Array.isArray(S.parts))S.parts=DEFP();if(!S.metric)S.metric="kg";
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}};
 const $=id=>document.getElementById(id);
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
@@ -96,10 +109,10 @@ const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth
 const fmt=n=>(Math.round(n*100)/100).toLocaleString("en-US");
 const toKg=(w,u)=>u==="lb"?w*LB:w,vol=l=>l.weight*l.reps*l.sets;
 const DAYS=[["chest","胸日"],["back","背日"],["legs","腿日"],["other","其他"]];
-const PARTS=[["shoulder","肩"],["chest","胸"],["tri","三頭"],["other","其他"]];
+let PARTS=S.parts;
 const nLen=s=>Array.from(s).length;
-const guess=n=>n.includes("三頭")?"tri":n.includes("肩")?"shoulder":n.includes("胸")?"chest":"";
-const exDay=e=>e.day||"other",exPart=e=>e.part||guess(e.name)||"other";
+const guess=n=>{const p=PARTS.filter(x=>x[0]!=="other"&&n.includes(x[1])).sort((a,b)=>nLen(b[1])-nLen(a[1]))[0];return p?p[0]:"";};
+const exDay=e=>e.day||"other",exPart=e=>{const k=e.part||guess(e.name);return PARTS.some(p=>p[0]===k)?k:"other";};
 const exById=id=>S.exercises.find(x=>x.id===id),exName=id=>(exById(id)||{}).name||"";
 const pIdx=k=>Math.max(0,PARTS.findIndex(p=>p[0]===k));
 const byLen=(a,b)=>nLen(a.name)-nLen(b.name)||a.name.localeCompare(b.name,"zh-Hant");
@@ -118,7 +131,7 @@ const ask=(msg,fn,label,danger=true)=>modal("",[h("p",{class:"pre",text:msg})],[
 const opts=(arr)=>arr.map(([k,t])=>h("option",{value:k,text:t}));
 
 /* 輸入區 */
-const upd=()=>{$("preview").textContent=fmt(toKg(parseFloat($("w").value)||0,U)*(parseFloat($("r").value)||0)*(parseFloat($("s").value)||0))+" kg";};
+const upd=()=>{$("preview").textContent=fmt(toKg(parseFloat($("w").value)||0,U)*(parseFloat($("r").value)||0)*(parseFloat($("s").value)||0))+" kg";cmp();};
 function stepper(id,lab,step){
   const i=h("input",{id,type:"number",inputmode:id==="w"?"decimal":"numeric",min:"0",step:"any"});i.addEventListener("input",upd);
   const adj=d=>{i.value=Math.max(0,Math.round(((parseFloat(i.value)||0)+d)*100)/100);upd();};
@@ -188,6 +201,19 @@ function renderChips(){
   $("orgBtn").textContent=org?"完成整理":"拖移整理";
 }
 $("orgBtn").onclick=()=>{org=!org;renderChips();};
+$("catBtn").onclick=()=>{
+  const rows=PARTS.map(([k,n])=>({k,i:h("input",{type:"text",maxlength:"12",value:n}),del:false}));
+  const list=h("div"),add=h("input",{type:"text",maxlength:"12",placeholder:"新分類名稱，例如：二頭"}),er=h("div",{class:"err"});
+  const draw=()=>{list.innerHTML="";rows.forEach(r=>{if(r.del)return;list.appendChild(h("div",{class:"row",style:"margin-top:8px"},[r.i,r.k==="other"?h("span",{class:"empty",style:"flex:none",text:"預設"}):h("button",{type:"button",class:"dl",style:"flex:none;margin:0",text:"刪除",onclick:()=>{r.del=true;draw();}})]));});};
+  draw();
+  modal("管理分類",[list,h("label",{text:"新增分類"}),add,er],[{t:"取消"},{t:"儲存",c:"main",f:()=>{
+    const keep=rows.filter(r=>!r.del),names=keep.map(r=>r.i.value.trim()),nn=add.value.trim(),all=nn?names.concat(nn):names;
+    if(names.some(x=>!x)){er.textContent="分類名稱不能空白。";return false;}
+    if(new Set(all).size!==all.length){er.textContent="分類名稱不能重複。";return false;}
+    const np=keep.map((r,i)=>[r.k,names[i]]);
+    if(nn)np.splice(np.length-1,0,["p_"+uid(),nn]);
+    PARTS.length=0;np.forEach(x=>PARTS.push(x));save();full();}}]);
+};
 $("addBtn").onclick=()=>{
   const n=h("input",{type:"text",maxlength:"40",placeholder:"例如：滑輪下拉"}),p=h("select",{},[h("option",{value:"",text:"自動（依名稱判斷）"}),opts(PARTS)]),er=h("div",{class:"err"});
   modal("新增項目（"+label(DAYS,S.day)+"）",[h("label",{text:"名稱"}),n,h("label",{text:"部位"}),p,er],[{t:"取消"},{t:"新增",c:"main",f:()=>{
@@ -210,6 +236,17 @@ $("manage").onclick=()=>{
       e.name=name;e.part=p.value;e.day=d.value;S.day=d.value;S.last=e.id;save();full();}}]);
 };
 
+const mv=arr=>S.metric==="sets"?arr.reduce((a,l)=>a+l.sets,0)+" 組":fmt(arr.reduce((a,l)=>a+vol(l),0))+" kg";
+function editLog(l){
+  const num=(lab,v)=>{const i=h("input",{type:"number",inputmode:"decimal",min:"0",step:"any",value:String(v)});return {i,n:h("div",{},[h("label",{text:lab}),i])};};
+  const W=num("重量",l.ow!=null?l.ow:l.weight),R=num("次數",l.reps),T=num("組數",l.sets);
+  const u=h("select",{},opts([["kg","kg"],["lb","lb"]]));u.value=l.u||"kg";
+  const dt=h("input",{type:"date",value:l.date}),nt=h("input",{type:"text",value:l.note||""}),er=h("div",{class:"err"});
+  modal("編輯："+exName(l.exId),[h("div",{class:"row"},[W.n,h("div",{style:"flex:none;width:84px"},[h("label",{text:"單位"}),u])]),h("div",{class:"row",style:"margin-top:8px"},[R.n,T.n]),h("label",{text:"日期"}),dt,h("label",{text:"備註"}),nt,er],[{t:"取消"},{t:"儲存",c:"main",f:()=>{
+    const w=parseFloat(W.i.value),r=parseInt(R.i.value,10),s=parseInt(T.i.value,10);
+    if(isNaN(w)||w<0||!(r>0)||!(s>0)||!dt.value){er.textContent="請填入重量、次數、組數與日期。";return false;}
+    l.weight=toKg(w,u.value);l.ow=w;l.u=u.value;l.reps=r;l.sets=s;l.date=dt.value;l.note=nt.value.trim();save();soft();}}]);
+}
 /* 歷史 */
 function renderHist(){
   const box=$("hist");box.innerHTML="";const c=cur(),ids=dayEx().map(e=>e.id);
@@ -220,17 +257,17 @@ function renderHist(){
     const arr=days[d].sort((a,b)=>a.ts-b.ts),by={},order=[];
     arr.forEach(l=>{if(!by[l.exId]){by[l.exId]=[];order.push(l.exId);}by[l.exId].push(l);});
     order.sort((a,b)=>pIdx(exPart(exById(a)||{name:""}))-pIdx(exPart(exById(b)||{name:""}))||nLen(exName(a))-nLen(exName(b)));
-    const day=h("div",{class:"day"},[h("div",{class:"dayh"},[h("span",{text:d}),h("em",{text:"當日 "+fmt(arr.reduce((a,l)=>a+vol(l),0))+" kg"})])]);
+    const day=h("div",{class:"day"},[h("div",{class:"dayh"},[h("span",{text:d}),h("em",{text:"當日 "+mv(arr)})])]);
     let lp="";
     order.forEach(eid=>{
       const pk=exPart(exById(eid)||{name:""}),items=by[eid],key=d+"|"+eid;
       if(pk!==lp){day.appendChild(h("div",{class:"ph",text:label(PARTS,pk)}));lp=pk;}
-      const det=h("details",{class:"grp"},[h("summary",{},[h("span",{class:"gn",text:exName(eid)}),h("span",{class:"gv",text:items.reduce((a,l)=>a+l.sets,0)+" 組　"+fmt(items.reduce((a,l)=>a+vol(l),0))+" kg"})])]);
+      const det=h("details",{class:"grp"},[h("summary",{},[h("span",{class:"gn",text:exName(eid)}),h("span",{class:"gv",text:mv(items)})])]);
       det.open=!!open[key];det.addEventListener("toggle",()=>{if(det.open)open[key]=1;else delete open[key];});
       items.forEach(l=>det.appendChild(h("div",{class:"log"},[
         h("div",{},[h("div",{text:(l.u==="lb"?`${fmt(l.ow)} lb（${fmt(l.weight)} kg）`:`${fmt(l.weight)} kg`)+` × ${l.reps} 次 × ${l.sets} 組 = ${fmt(vol(l))} kg`}),l.note&&h("small",{text:l.note})]),
         h("div",{style:"display:flex;flex:none"},[
-          h("button",{type:"button",class:"link",text:"改日期",onclick:()=>{const i=h("input",{type:"date",value:l.date});modal("修改日期",[i],[{t:"取消"},{t:"儲存",c:"main",f:()=>{if(!i.value)return false;l.date=i.value;save();soft();}}]);}}),
+          h("button",{type:"button",class:"link",text:"編輯",onclick:()=>editLog(l)}),
           h("button",{type:"button",class:"link",text:"刪除",onclick:()=>ask("確定刪除這筆紀錄？",()=>{S.logs=S.logs.filter(x=>x.id!==l.id);save();soft();})})])])));
       day.appendChild(det);
     });
@@ -239,12 +276,53 @@ function renderHist(){
 }
 document.querySelectorAll("#hSeg button").forEach(b=>b.addEventListener("click",()=>{only=b.dataset.o==="1";document.querySelectorAll("#hSeg button").forEach(x=>x.classList.toggle("on",x===b));renderHist();}));
 
+/* 和上次比較、顯示方式、備份 */
+function cmp(){
+  const box=$("cmp"),c=cur();box.innerHTML="";if(!c)return;
+  const d=$("date").value||today(),mine=S.logs.filter(l=>l.exId===c.id);
+  const prev=mine.filter(l=>l.date<d).sort((a,b)=>a.date<b.date?1:-1);
+  if(!prev.length)return;
+  const pl=mine.filter(l=>l.date===prev[0].date),td=mine.filter(l=>l.date===d);
+  const sum=(a,f)=>a.reduce((x,l)=>x+f(l),0),uk=U==="lb"?LB:1;
+  const w=parseFloat($("w").value)||0,r=parseFloat($("r").value)||0,s=parseFloat($("s").value)||0,wk=toKg(w,U);
+  const pV=sum(pl,vol),pS=sum(pl,l=>l.sets),pW=Math.max(...pl.map(l=>l.weight));
+  const cV=sum(td,vol)+wk*r*s,cS=sum(td,l=>l.sets)+s,sets=S.metric==="sets";
+  const diff=sets?pS-cS:pV-cV,unit=sets?" 組":" kg";
+  let t=`<div>上次 ${prev[0].date}：<b>${sets?pS+" 組":fmt(pV)+" kg"}</b>，最大重量 <b>${fmt(pW/uk)} ${U}</b></div>`;
+  t+=diff>1e-6?`<div>要追平上次，還差 <b class="no">${fmt(diff)}${unit}</b>`+(!sets&&wk>0?`（用 ${fmt(w)} ${U} 約再 ${Math.ceil(diff/wk-1e-9)} 下）`:"")+`</div>`:`<div class="ok"><b>已追平上次，多了 ${fmt(-diff)}${unit}</b></div>`;
+  if(w>0){const dw=(wk-pW)/uk;t+=`<div>重量：${Math.abs(dw)<0.05?"和上次最大重量相同":(dw>0?"比上次高 ":"比上次低 ")+fmt(Math.abs(dw))+" "+U}</div>`;}
+  box.innerHTML=t+`<div style="font-size:12px">比較已包含今天已存的紀錄與目前填的這筆</div>`;
+}
+function renderM(){document.querySelectorAll("#mSeg button").forEach(b=>b.classList.toggle("on",b.dataset.m===S.metric));}
+document.querySelectorAll("#mSeg button").forEach(b=>b.addEventListener("click",()=>{S.metric=b.dataset.m;save();renderM();renderHist();cmp();}));
+function renderBak(){
+  const need=S.logs.length>0&&(!S.bak||Date.now()-S.bak>7*864e5);
+  $("bakInfo").textContent=(S.bak?"上次備份："+new Date(S.bak).toLocaleDateString("zh-TW"):"尚未備份過")+"。資料只存在這個瀏覽器裡，建議每週備份一次。";
+  $("bakTop").hidden=!need;
+}
+async function exportData(){
+  const name=`workout-log-${new Date().toISOString().slice(0,10)}.json`,file=new File([JSON.stringify({app:"workout-log",v:1,data:S})],name,{type:"application/json"});
+  const done=()=>{S.bak=Date.now();save();renderBak();};
+  try{if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});done();return;}}catch(e){if(e&&e.name==="AbortError")return;}
+  const a=h("a",{href:URL.createObjectURL(file),download:name});document.body.appendChild(a);a.click();a.remove();done();
+}
+$("exp").onclick=exportData;
+$("imp").onclick=()=>$("impf").click();
+$("impf").onchange=e=>{const f=e.target.files[0];e.target.value="";if(!f)return;
+  f.text().then(t=>{let d=null;try{d=JSON.parse(t);}catch(x){}
+    const s=d&&d.data&&d.data.exercises?d.data:d;
+    if(!s||!Array.isArray(s.exercises)||!Array.isArray(s.logs)){modal("匯入失敗",[h("p",{class:"pre",text:"這不是有效的備份檔。"})],[{t:"關閉",c:"main"}]);return;}
+    ask(`匯入後會取代目前的資料（目前 ${S.logs.length} 筆紀錄，備份檔 ${s.logs.length} 筆）。確定嗎？`,()=>{S=s;if(!S.day)S.day="chest";if(!Array.isArray(S.parts))S.parts=DEFP();if(!S.metric)S.metric="kg";PARTS=S.parts;S.bak=Date.now();save();full();renderM();renderBak();},"確定匯入",false);});};
+$("bakTop").onclick=()=>$("bakSec").scrollIntoView({behavior:"smooth"});
+
 /* 整體 */
 function renderTabs(){const t=$("tabs");t.innerHTML="";DAYS.forEach(([k,n])=>t.appendChild(h("button",{type:"button",class:k===S.day?"on":"",text:n,onclick:()=>{S.day=k;S.last="";save();full();}})));}
 function renderEntry(){const c=cur();$("entry").hidden=!c;if(c){$("eName").textContent=c.name;prefill();}}
-function soft(){renderChips();renderHist();}
+function soft(){renderChips();renderHist();cmp();renderBak();}
 function full(){renderTabs();renderChips();renderEntry();renderHist();}
-$("date").value=today();full();
+$("date").value=today();$("date").addEventListener("change",cmp);
+if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
+full();renderM();renderBak();
 })();
 </script>
 </body>
